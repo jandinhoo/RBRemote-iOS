@@ -1,98 +1,49 @@
 # RB Remote iOS
 
-Este e o port inicial em SwiftUI do RB Remote para iPhone, preparado para GitHub e Codemagic.
+Port oficial do RB Remote para iPhone.
 
-## Estrutura
+## Sobre
 
-- `RBRemote/` contem o app SwiftUI, `Info.plist` e assets.
-- `project.yml` gera o projeto Xcode usando XcodeGen.
-- `codemagic.yaml` gera um `.ipa` unsigned para instalacao manual com Sideloadly/AltStore.
-- `EncodedAssets/` guarda as imagens em base64 para subir pelo GitHub sem corromper PNG.
-- `scripts/restore-assets.sh` recria os PNGs antes da build.
-- `ios-version-example.json` mostra o formato do arquivo de atualizacao iOS.
+RB Remote controla o RadioBOSS pela API remota na rede local.
 
-## Como subir no GitHub
+O app permite configurar IP, porta e senha, usar comandos de reproducao, visualizar a faixa atual e a proxima faixa, alem de validar recursos premium pelo servidor do RB Remote.
 
-Suba a pasta `ios/RBRemote` como um repositorio Git separado ou coloque esta pasta na raiz de um repositorio.
+## Build
 
-Arquivos importantes que precisam ir para o GitHub:
+Este repositorio esta preparado para build no Codemagic usando o arquivo:
 
-- `RBRemote/RBRemoteApp.swift`
-- `RBRemote/Info.plist`
-- `RBRemote/Assets.xcassets`
-- `EncodedAssets/`
-- `scripts/restore-assets.sh`
-- `project.yml`
-- `codemagic.yaml`
-
-## Como abrir no Xcode em um Mac
-
-Se estiver em um Mac:
-
-1. Instale o Xcode pela App Store.
-2. Instale o XcodeGen:
-
-```bash
-brew install xcodegen
+```text
+codemagic.yaml
 ```
 
-3. Entre na pasta do projeto:
+Workflow:
 
-```bash
-cd RBRemote
+```text
+RB Remote iOS - IPA manual
 ```
 
-4. Gere o projeto:
+Artefato gerado:
 
-```bash
-bash scripts/restore-assets.sh
-xcodegen generate
+```text
+RBRemote-unsigned.ipa
 ```
 
-5. Abra:
+## Instalacao
 
-```bash
-open RBRemote.xcodeproj
-```
+O IPA gerado e destinado a instalacao manual.
 
-No Xcode, se quiser instalar direto no seu iPhone, configure `Signing & Capabilities`.
+No iOS, o usuario precisa assinar e instalar o app com uma ferramenta externa, como Sideloadly, AltStore ou similar.
 
-## Como gerar IPA no Codemagic
+## Atualizacoes
 
-1. Conecte o repositorio GitHub no Codemagic.
-2. Escolha usar o arquivo `codemagic.yaml`.
-3. Rode o workflow `RB Remote iOS - IPA manual`.
-4. Ao terminar, baixe o artefato `RBRemote-unsigned.ipa`.
+O iOS nao permite instalar atualizacoes automaticamente fora da App Store.
 
-Esse `.ipa` unsigned e para o usuario assinar/instalar manualmente com Sideloadly, AltStore ou ferramenta parecida.
+O app pode verificar se existe uma nova versao e abrir o link de download pelo navegador.
 
-## Atualizacao no iOS pelo navegador
+## Observacoes
 
-O iOS nao instala o app automaticamente. O app apenas verifica um manifest JSON e abre o link de download no navegador.
-
-Crie um arquivo `ios-version.json` no Drive ou outro servidor com este formato:
-
-```json
-{
-  "versionCode": 2,
-  "versionName": "1.1",
-  "downloadUrl": "https://seu-link-de-download-do-ios",
-  "notes": "Melhorias do RB Remote para iOS."
-}
-```
-
-Depois, no arquivo `RBRemoteApp.swift`, altere:
-
-```swift
-static let updateManifestURLString = ""
-```
-
-para o link direto desse `ios-version.json`.
-
-## Observacoes importantes
-
-- O app usa HTTP local para falar com o RadioBoss, entao o `Info.plist` ja inclui permissao de rede local e App Transport Security.
-- O pagamento abre o link do Mercado Pago no navegador.
-- Conta FREE so usa `PROXIMA FAIXA`; o restante pede premium, igual no Android.
-- Para compilar localmente ainda precisa de Mac com Xcode.
-- Para instalar manualmente, o usuario ainda precisa assinar o `.ipa` com ferramenta externa.
+- O RadioBOSS precisa estar rodando no computador.
+- A API remota do RadioBOSS precisa estar ativada.
+- O celular e o computador precisam estar na mesma rede.
+- A porta configurada no app precisa ser a mesma configurada no RadioBOSS.
+- Recursos premium dependem do servidor RB Remote.
