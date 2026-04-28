@@ -8,7 +8,7 @@ decode_asset() {
   local source_file="$ENCODED_DIR/$1"
   local destination_file="$ROOT_DIR/$2"
   mkdir -p "$(dirname "$destination_file")"
-  base64 --decode "$source_file" > "$destination_file"
+  base64 --decode < "$source_file" > "$destination_file"
 }
 
 decode_asset "rb_remote_logo.png.base64" "RBRemote/Assets.xcassets/Logo.imageset/rb_remote_logo.png"
