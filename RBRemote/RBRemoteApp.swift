@@ -215,7 +215,7 @@ final class AppModel: ObservableObject {
 
         do {
             let url = try await licenseClient.createPayment(login: license.login, deviceId: LicenseStore.deviceId, payerEmail: email)
-            UIApplication.shared.open(url)
+            await UIApplication.shared.open(url)
             toastMessage = "Pagamento aberto. Depois de pagar, volte ao app."
         } catch {
             toastMessage = "Nao foi possivel iniciar o pagamento: \(error.localizedDescription)"
@@ -239,7 +239,9 @@ final class AppModel: ObservableObject {
     }
 
     func openUpdateDownload(_ update: UpdateInfo) {
-        UIApplication.shared.open(update.downloadURL)
+        Task {
+            await UIApplication.shared.open(update.downloadURL)
+        }
     }
 }
 
@@ -359,7 +361,7 @@ struct HeaderCard: View {
                 if !model.loginText.isEmpty {
                     Text(model.loginText)
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.blueWhite.opacity(0.75))
+                        .foregroundStyle(Color.blueWhite.opacity(0.75))
                 }
 
                 HStack(spacing: 10) {
@@ -384,7 +386,7 @@ struct HeaderCard: View {
                     if let days = model.premiumDaysText {
                         Text(days)
                             .font(.caption)
-                            .foregroundStyle(.blueWhite.opacity(0.75))
+                            .foregroundStyle(Color.blueWhite.opacity(0.75))
                     }
                 }
             }
@@ -397,7 +399,7 @@ struct HeaderCard: View {
     private var accountColor: Color {
         switch model.accountLabel {
         case "PREMIUM": return .green
-        case "TESTER", "ADM": return .remoteBlue
+        case "TESTER", "ADM": return Color.remoteBlue
         case "BLOQ": return .red
         default: return .orange
         }
@@ -430,7 +432,7 @@ struct ConfigButton: View {
             }
             .padding(18)
             .background(
-                LinearGradient(colors: [.remoteBlue, .deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing),
+                LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: RoundedRectangle(cornerRadius: 18)
             )
         }
@@ -445,7 +447,7 @@ struct QuickCommands: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Image(systemName: "bolt.fill")
-                    .foregroundStyle(.remoteBlue)
+                    .foregroundStyle(Color.remoteBlue)
                 Text("COMANDOS RAPIDOS")
                     .font(.headline.weight(.black))
                     .foregroundStyle(.white)
@@ -489,7 +491,7 @@ struct CommandButton: View {
             HStack(spacing: 14) {
                 Image(systemName: locked ? "lock.fill" : systemImage)
                     .font(.system(size: wide ? 22 : 30, weight: .black))
-                    .foregroundStyle(.remoteBlue)
+                    .foregroundStyle(Color.remoteBlue)
                 Text(title)
                     .font(.subheadline.weight(.black))
                     .foregroundStyle(.white)
@@ -516,7 +518,7 @@ struct TrackCard: View {
                 HStack(spacing: 16) {
                     Image(systemName: systemImage)
                         .font(.title2.weight(.black))
-                        .foregroundStyle(.remoteBlue)
+                        .foregroundStyle(Color.remoteBlue)
                         .frame(width: 54, height: 54)
                         .background(Circle().stroke(Color.remoteBlue, lineWidth: 1.2))
 
@@ -526,15 +528,15 @@ struct TrackCard: View {
                             .foregroundStyle(.white)
                         Text("Toque para visualizar")
                             .font(.subheadline)
-                            .foregroundStyle(.blueWhite.opacity(0.72))
+                            .foregroundStyle(Color.blueWhite.opacity(0.72))
                     }
 
                     Spacer()
                     Text(expanded ? "Ocultar" : "Mostrar")
-                        .foregroundStyle(.remoteBlue)
+                        .foregroundStyle(Color.remoteBlue)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .foregroundStyle(.blueWhite.opacity(0.8))
+                        .foregroundStyle(Color.blueWhite.opacity(0.8))
                 }
 
                 if expanded {
@@ -562,7 +564,7 @@ struct TrackField: View {
                 .foregroundStyle(.white)
             Text(value.isEmpty ? "-" : value)
                 .font(.subheadline)
-                .foregroundStyle(.blueWhite.opacity(0.78))
+                .foregroundStyle(Color.blueWhite.opacity(0.78))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -582,10 +584,10 @@ struct LoginView: View {
                         .font(.largeTitle.weight(.black))
                         .foregroundStyle(.white)
                     Text("Crie um login para usar o RB Remote neste aparelho.")
-                        .foregroundStyle(.blueWhite.opacity(0.78))
+                        .foregroundStyle(Color.blueWhite.opacity(0.78))
                     Text("LOGIN")
                         .font(.caption.weight(.black))
-                        .foregroundStyle(.remoteBlue)
+                        .foregroundStyle(Color.remoteBlue)
                     TextField("seu_login", text: $login)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
@@ -599,11 +601,11 @@ struct LoginView: View {
                             .padding()
                             .font(.headline.weight(.black))
                             .foregroundStyle(.white)
-                            .background(LinearGradient(colors: [.remoteBlue, .deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
+                            .background(LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
                     }
                     Text("Sua conta inicia como FREE. Recursos premium podem ser desbloqueados depois.")
                         .font(.footnote)
-                        .foregroundStyle(.blueWhite.opacity(0.55))
+                        .foregroundStyle(Color.blueWhite.opacity(0.55))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity)
                 }
@@ -630,10 +632,10 @@ struct PaymentEmailView: View {
                         .font(.title.weight(.black))
                         .foregroundStyle(.white)
                     Text("Informe o e-mail que sera usado no pagamento do Mercado Pago.")
-                        .foregroundStyle(.blueWhite.opacity(0.78))
+                        .foregroundStyle(Color.blueWhite.opacity(0.78))
                     Text("E-MAIL")
                         .font(.caption.weight(.black))
-                        .foregroundStyle(.remoteBlue)
+                        .foregroundStyle(Color.remoteBlue)
                     TextField("email@exemplo.com", text: $email)
                         .keyboardType(.emailAddress)
                         .textInputAutocapitalization(.never)
@@ -649,13 +651,13 @@ struct PaymentEmailView: View {
                             .padding()
                             .font(.headline.weight(.black))
                             .foregroundStyle(.white)
-                            .background(LinearGradient(colors: [.remoteBlue, .deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
+                            .background(LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
                     }
                     Button("AGORA NAO") {
                         dismiss()
                     }
                     .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.blueWhite.opacity(0.75))
+                    .foregroundStyle(Color.blueWhite.opacity(0.75))
                     .frame(maxWidth: .infinity)
                     .padding(.top, 6)
                 }
@@ -701,7 +703,7 @@ struct TutorialView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         Text("Passo \(step + 1) de 3")
                             .font(.headline.weight(.black))
-                            .foregroundStyle(.remoteBlue)
+                            .foregroundStyle(Color.remoteBlue)
 
                         Text(stepText)
                             .font(.title2.weight(.black))
@@ -711,7 +713,7 @@ struct TutorialView: View {
                         if step == 1 {
                             Text("Procure seu endereco IPv4 como na imagem e coloque ele na caixa abaixo.")
                                 .font(.title3)
-                                .foregroundStyle(.blueWhite.opacity(0.78))
+                                .foregroundStyle(Color.blueWhite.opacity(0.78))
                         }
 
                         Image(stepImage)
@@ -755,7 +757,7 @@ struct TutorialView: View {
                                 .padding()
                                 .font(.headline.weight(.black))
                                 .foregroundStyle(.white)
-                                .background(LinearGradient(colors: [.remoteBlue, .deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
+                                .background(LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
                         }
                     }
                     .padding(22)
@@ -803,7 +805,7 @@ struct StepperHeader: View {
                     .overlay {
                         Text(index < step ? "✓" : "\(index + 1)")
                             .font(.headline.weight(.black))
-                            .foregroundStyle(index <= step ? .white : .blueWhite.opacity(0.7))
+                            .foregroundStyle(index <= step ? Color.white : Color.blueWhite.opacity(0.7))
                     }
                     .frame(width: 42, height: 42)
                 if index < 2 {
