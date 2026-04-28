@@ -251,15 +251,18 @@ struct RootView: View {
     @State private var nextExpanded = false
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppBackground()
+        ZStack {
+            AppBackground()
+
+            GeometryReader { proxy in
+                let horizontalPadding = proxy.size.width <= 390 ? 14.0 : 18.0
+                let contentSpacing = proxy.size.height <= 760 ? 14.0 : 18.0
 
                 ScrollView {
-                    VStack(spacing: 18) {
-                        HeaderCard()
-                        ConfigButton()
-                        QuickCommands()
+                    VStack(spacing: contentSpacing) {
+                        HeaderCard(compact: proxy.size.width <= 390)
+                        ConfigButton(compact: proxy.size.width <= 390)
+                        QuickCommands(compact: proxy.size.height <= 760)
                         TrackCard(
                             title: "Faixa atual",
                             systemImage: "music.note",
@@ -281,13 +284,15 @@ struct RootView: View {
                             }
                         }
                     }
-                    .padding(18)
-                    .padding(.top, 12)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, 10)
+                    .padding(.bottom, 24)
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
-            .navigationBarHidden(true)
         }
-        .navigationViewStyle(.stack)
+        .ignoresSafeArea(edges: [.horizontal, .bottom])
         .sheet(isPresented: $model.showLogin) {
             LoginView()
                 .environmentObject(model)
@@ -347,13 +352,14 @@ struct RootView: View {
 
 struct HeaderCard: View {
     @EnvironmentObject private var model: AppModel
+    var compact = false
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: compact ? 12 : 16) {
             Image("Logo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 66, height: 66)
+                .frame(width: compact ? 58 : 66, height: compact ? 58 : 66)
                 .padding(4)
                 .background(Circle().fill(Color.white.opacity(0.04)))
 
@@ -361,16 +367,22 @@ struct HeaderCard: View {
                 if !model.loginText.isEmpty {
                     Text(model.loginText)
                         .font(.caption.weight(.bold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(Color.blueWhite.opacity(0.75))
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Text("RB REMOTE")
-                        .font(.title3.weight(.black))
+                        .font((compact ? Font.headline : Font.title3).weight(.black))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
+                        .layoutPriority(1)
 
                     Text(model.accountLabel)
                         .font(.caption.weight(.black))
+                        .lineLimit(1)
                         .foregroundStyle(accountColor)
                 }
 
@@ -380,19 +392,23 @@ struct HeaderCard: View {
                         .frame(width: 9, height: 9)
 
                     Text(model.isConnected ? "Conectado" : "Desconectado")
-                        .font(.subheadline)
+                        .font(compact ? .footnote : .subheadline)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(model.isConnected ? .green : .red)
 
                     if let days = model.premiumDaysText {
                         Text(days)
                             .font(.caption)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                             .foregroundStyle(Color.blueWhite.opacity(0.75))
                     }
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(18)
+        .padding(compact ? 14 : 18)
         .background(RemoteCardBackground())
     }
 
@@ -408,29 +424,34 @@ struct HeaderCard: View {
 
 struct ConfigButton: View {
     @EnvironmentObject private var model: AppModel
+    var compact = false
 
     var body: some View {
         Button {
             model.showTutorial = true
         } label: {
-            HStack(spacing: 18) {
+            HStack(spacing: compact ? 12 : 16) {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(size: compact ? 26 : 30, weight: .bold))
                     .foregroundStyle(.white.opacity(0.9))
-                    .frame(width: 50, height: 50)
+                    .frame(width: compact ? 44 : 50, height: compact ? 44 : 50)
                     .background(Circle().fill(Color.white.opacity(0.08)))
 
                 Text("CONFIGURAR")
                     .font(.headline.weight(.black))
-                    .kerning(2)
+                    .kerning(compact ? 1.3 : 2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .allowsTightening(true)
                     .foregroundStyle(.white)
+                    .layoutPriority(1)
 
-                Spacer()
+                Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.title3.weight(.black))
                     .foregroundStyle(.white.opacity(0.85))
             }
-            .padding(18)
+            .padding(compact ? 14 : 18)
             .background(
                 LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: RoundedRectangle(cornerRadius: 18)
@@ -442,36 +463,39 @@ struct ConfigButton: View {
 
 struct QuickCommands: View {
     @EnvironmentObject private var model: AppModel
+    var compact = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: compact ? 10 : 14) {
             HStack(spacing: 12) {
                 Image(systemName: "bolt.fill")
                     .foregroundStyle(Color.remoteBlue)
                 Text("COMANDOS RAPIDOS")
                     .font(.headline.weight(.black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
                     .foregroundStyle(.white)
             }
-            .padding(.top, 8)
+            .padding(.top, compact ? 2 : 8)
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                CommandButton(title: "PLAY", systemImage: "play.fill", locked: !model.hasPremiumAccess) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: compact ? 10 : 12) {
+                CommandButton(title: "PLAY", systemImage: "play.fill", locked: !model.hasPremiumAccess, compact: compact) {
                     model.sendPremiumCommand("play")
                 }
-                CommandButton(title: "PAUSE", systemImage: "pause.fill", locked: !model.hasPremiumAccess) {
+                CommandButton(title: "PAUSE", systemImage: "pause.fill", locked: !model.hasPremiumAccess, compact: compact) {
                     model.sendPremiumCommand("pause")
                 }
             }
 
-            CommandButton(title: "STOP", systemImage: "stop.fill", locked: !model.hasPremiumAccess, wide: true) {
+            CommandButton(title: "STOP", systemImage: "stop.fill", locked: !model.hasPremiumAccess, wide: true, compact: compact) {
                 model.sendPremiumCommand("stop")
             }
 
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                CommandButton(title: "FAIXA ANTERIOR", systemImage: "backward.fill", locked: !model.hasPremiumAccess) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: compact ? 10 : 12) {
+                CommandButton(title: "FAIXA ANTERIOR", systemImage: "backward.fill", locked: !model.hasPremiumAccess, compact: compact) {
                     model.sendPremiumCommand("prev")
                 }
-                CommandButton(title: "PROXIMA FAIXA", systemImage: "forward.fill", locked: false) {
+                CommandButton(title: "PROXIMA FAIXA", systemImage: "forward.fill", locked: false, compact: compact) {
                     model.sendNextCommand()
                 }
             }
@@ -484,20 +508,25 @@ struct CommandButton: View {
     let systemImage: String
     let locked: Bool
     var wide = false
+    var compact = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 14) {
+            HStack(spacing: compact ? 10 : 14) {
                 Image(systemName: locked ? "lock.fill" : systemImage)
-                    .font(.system(size: wide ? 22 : 30, weight: .black))
+                    .font(.system(size: wide ? 20 : (compact ? 25 : 30), weight: .black))
                     .foregroundStyle(Color.remoteBlue)
                 Text(title)
-                    .font(.subheadline.weight(.black))
+                    .font((compact ? Font.caption : Font.subheadline).weight(.black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .allowsTightening(true)
                     .foregroundStyle(.white)
+                    .layoutPriority(1)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: wide ? 70 : 92)
+            .frame(height: wide ? (compact ? 60 : 70) : (compact ? 76 : 92))
             .background(RemoteCardBackground())
             .opacity(locked ? 0.48 : 1)
         }
@@ -514,25 +543,30 @@ struct TrackCard: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 14) {
                     Image(systemName: systemImage)
-                        .font(.title2.weight(.black))
+                        .font(.title3.weight(.black))
                         .foregroundStyle(Color.remoteBlue)
-                        .frame(width: 54, height: 54)
+                        .frame(width: 46, height: 46)
                         .background(Circle().stroke(Color.remoteBlue, lineWidth: 1.2))
 
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(title)
-                            .font(.title3.weight(.bold))
+                            .font(.headline.weight(.bold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                             .foregroundStyle(.white)
                         Text("Toque para visualizar")
                             .font(.subheadline)
+                            .lineLimit(1)
                             .foregroundStyle(Color.blueWhite.opacity(0.72))
                     }
 
-                    Spacer()
+                    Spacer(minLength: 0)
                     Text(expanded ? "Ocultar" : "Mostrar")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(Color.remoteBlue)
                     Image(systemName: "chevron.right")
                         .rotationEffect(.degrees(expanded ? 90 : 0))
@@ -546,7 +580,7 @@ struct TrackCard: View {
                     TrackField(label: "Nome da Faixa", value: track.fileNameOnly)
                 }
             }
-            .padding(18)
+            .padding(16)
             .background(RemoteCardBackground())
         }
         .buttonStyle(.plain)
