@@ -34,6 +34,16 @@ O IPA gerado e destinado a instalacao manual.
 
 No iOS, o usuario precisa assinar e instalar o app com uma ferramenta externa, como Sideloadly, AltStore ou similar.
 
+## Assinatura futura
+
+O Bundle ID padrao do app e:
+
+```text
+br.com.jandinho.rbremote
+```
+
+Antes de assinar com outro provisioning profile, gere o app usando `RBREMOTE_BUNDLE_ID` igual ao Bundle ID aceito por esse profile. Isso evita erro de assinatura por Bundle ID diferente.
+
 ## Atualizacoes
 
 O iOS nao permite instalar atualizacoes automaticamente fora da App Store.

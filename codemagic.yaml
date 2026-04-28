@@ -8,6 +8,7 @@ workflows:
       vars:
         XCODE_PROJECT: "RBRemote.xcodeproj"
         XCODE_SCHEME: "RBRemote"
+        RBREMOTE_BUNDLE_ID: "br.com.jandinho.rbremote"
     scripts:
       - name: Install XcodeGen
         script: |
@@ -26,6 +27,7 @@ workflows:
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
+            PRODUCT_BUNDLE_IDENTIFIER="$RBREMOTE_BUNDLE_ID" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
