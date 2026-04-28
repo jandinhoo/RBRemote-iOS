@@ -1,0 +1,48 @@
+workflows:
+  ios-unsigned-ipa:
+    name: RB Remote iOS - IPA manual
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "RBRemote.xcodeproj"
+        XCODE_SCHEME: "RBRemote"
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+      - name: Restore encoded PNG assets
+        script: |
+          bash scripts/restore-assets.sh
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate
+      - name: Build unsigned app
+        script: |
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package unsigned IPA
+        script: |
+          APP_PATH="build/Build/Products/Release-iphoneos/RB Remote.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App nao encontrado em: $APP_PATH"
+            find build/Build/Products -maxdepth 3 -type d -name "*.app" -print
+            exit 1
+          fi
+          rm -rf build/ipa
+          mkdir -p build/ipa/Payload
+          cp -R "$APP_PATH" "build/ipa/Payload/RB Remote.app"
+          cd build/ipa
+          zip -qry "../RBRemote-unsigned.ipa" Payload
+    artifacts:
+      - build/RBRemote-unsigned.ipa
+      - build/Build/Products/Release-iphoneos/*.app

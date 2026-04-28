@@ -1,0 +1,30 @@
+name: RBRemote
+options:
+  bundleIdPrefix: br.com.jandinho
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: ""
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  RBRemote:
+    type: application
+    platform: iOS
+    sources:
+      - path: RBRemote
+    info:
+      path: RBRemote/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: br.com.jandinho.rbremote
+        PRODUCT_NAME: "RB Remote"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    scheme:
+      testTargets: []

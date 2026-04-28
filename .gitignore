@@ -1,0 +1,11 @@
+.DS_Store
+build/
+DerivedData/
+*.xcworkspace
+*.xcodeproj
+*.ipa
+*.xcarchive
+xcuserdata/
+*.xcuserstate
+RBRemote/Assets.xcassets/**/*.png
+!EncodedAssets/*.base64
