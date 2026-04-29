@@ -19,8 +19,24 @@ targets:
       - path: RBRemote
     info:
       path: RBRemote/Info.plist
+      properties:
+        CFBundleDisplayName: RB Remote
+        LSRequiresIPhoneOS: true
+        UILaunchStoryboardName: LaunchScreen
+        UILaunchStoryboardName~iphone: LaunchScreen
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocalNetworkUsageDescription: O RB Remote precisa acessar o RadioBoss na rede local do seu computador.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: RBRemote/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: "$(RBREMOTE_BUNDLE_ID)"
         PRODUCT_NAME: "RB Remote"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
