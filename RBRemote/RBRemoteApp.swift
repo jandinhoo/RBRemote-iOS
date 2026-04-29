@@ -294,17 +294,18 @@ struct RootView: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-        .sheet(isPresented: $model.showLogin) {
+        .fullScreenCover(isPresented: $model.showLogin) {
             LoginView()
                 .environmentObject(model)
                 .interactiveDismissDisabled()
         }
-        .sheet(isPresented: $model.showTutorial) {
+        .fullScreenCover(isPresented: $model.showTutorial) {
             TutorialView()
                 .environmentObject(model)
         }
-        .sheet(isPresented: $model.showPaymentEmail) {
+        .fullScreenCover(isPresented: $model.showPaymentEmail) {
             PaymentEmailView()
                 .environmentObject(model)
         }
@@ -650,6 +651,8 @@ struct LoginView: View {
             }
             .padding(18)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 }
 
@@ -668,7 +671,7 @@ struct PaymentEmailView: View {
                     Text("E-mail do Mercado Pago")
                         .font(.title.weight(.black))
                         .foregroundStyle(.white)
-                    Text("Informe o e-mail que será usado no pagamento")
+                    Text("Informe o e-mail que ser\u{00E1} usado no pagamento")
                         .foregroundStyle(Color.blueWhite.opacity(0.78))
                     Text("E-MAIL")
                         .font(.caption.weight(.black))
@@ -711,6 +714,8 @@ struct PaymentEmailView: View {
             }
             .padding(18)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
     }
 }
 
@@ -811,6 +816,8 @@ struct TutorialView: View {
                 .padding(18)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
         .onAppear {
             host = model.connection.host
             port = model.connection.portText.isEmpty ? "9000" : model.connection.portText
@@ -848,7 +855,7 @@ struct StepperHeader: View {
                     .strokeBorder(index <= step ? Color.remoteBlue : Color.white.opacity(0.18), lineWidth: 3)
                     .background(Circle().fill(index == step ? Color.remoteBlue : Color.clear))
                     .overlay {
-                        Text(index < step ? "✓" : "\(index + 1)")
+                        Text(index < step ? "\u{2713}" : "\(index + 1)")
                             .font(.headline.weight(.black))
                             .foregroundStyle(index <= step ? Color.white : Color.blueWhite.opacity(0.7))
                     }
