@@ -25,6 +25,9 @@ targets:
         PRODUCT_NAME: "RB Remote"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1"
+        UIRequiresFullScreen: "YES"
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_UIRequiresFullScreen: "YES"
         CODE_SIGN_STYLE: Manual
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
     scheme:

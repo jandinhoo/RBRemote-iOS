@@ -199,7 +199,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func startPayment(email: String) async {
+    func startPayment(email: String, couponCode: String) async {
         guard let license, license.hasLogin else {
             showLogin = true
             return
@@ -214,7 +214,7 @@ final class AppModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let url = try await licenseClient.createPayment(login: license.login, deviceId: LicenseStore.deviceId, payerEmail: email)
+            let url = try await licenseClient.createPayment(login: license.login, deviceId: LicenseStore.deviceId, payerEmail: email, couponCode: couponCode)
             await UIApplication.shared.open(url)
             toastMessage = "Pagamento aberto. Depois de pagar, volte ao app."
         } catch {
@@ -257,6 +257,8 @@ struct RootView: View {
             GeometryReader { proxy in
                 let horizontalPadding = proxy.size.width <= 390 ? 14.0 : 18.0
                 let contentSpacing = proxy.size.height <= 760 ? 14.0 : 18.0
+                let topPadding = max(proxy.safeAreaInsets.top + 10, 20)
+                let bottomPadding = max(proxy.safeAreaInsets.bottom + 18, 28)
 
                 ScrollView {
                     VStack(spacing: contentSpacing) {
@@ -286,13 +288,13 @@ struct RootView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, horizontalPadding)
-                    .padding(.top, 10)
-                    .padding(.bottom, 24)
+                    .padding(.top, topPadding)
+                    .padding(.bottom, bottomPadding)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
         }
-        .ignoresSafeArea(edges: [.horizontal, .bottom])
+        .ignoresSafeArea()
         .sheet(isPresented: $model.showLogin) {
             LoginView()
                 .environmentObject(model)
@@ -655,6 +657,7 @@ struct PaymentEmailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var model: AppModel
     @State private var email = ""
+    @State private var couponCode = ""
 
     var body: some View {
         ZStack {
@@ -676,9 +679,17 @@ struct PaymentEmailView: View {
                         .autocorrectionDisabled()
                         .padding()
                         .background(InputBackground())
+                    Text("CUPOM OPCIONAL")
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(Color.remoteBlue)
+                    TextField("PROMO10", text: $couponCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .padding()
+                        .background(InputBackground())
                     Button {
                         dismiss()
-                        Task { await model.startPayment(email: email) }
+                        Task { await model.startPayment(email: email, couponCode: couponCode) }
                     } label: {
                         Text("ADQUIRIR")
                             .frame(maxWidth: .infinity)
@@ -1073,11 +1084,12 @@ final class LicenseClient {
         return try parseLicense(json)
     }
 
-    func createPayment(login: String, deviceId: String, payerEmail: String) async throws -> URL {
+    func createPayment(login: String, deviceId: String, payerEmail: String, couponCode: String) async throws -> URL {
         let json = try await post(path: "/api/subscriptions/create", body: [
             "login": login,
             "device_id": deviceId,
-            "payer_email": payerEmail
+            "payer_email": payerEmail,
+            "coupon_code": couponCode.trimmingCharacters(in: .whitespacesAndNewlines)
         ])
         guard let initPoint = json["init_point"] as? String, let url = URL(string: initPoint) else {
             throw AppError.message("Mercado Pago nao retornou o link de pagamento.")
