@@ -575,7 +575,7 @@ struct RootView: View {
     }
 }
 
-private enum SideDrawer: Equatable {
+enum SideDrawer: Equatable {
     case songs
     case playlists
 }
