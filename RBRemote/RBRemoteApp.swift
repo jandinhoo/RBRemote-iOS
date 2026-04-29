@@ -564,9 +564,15 @@ struct RootView: View {
         }
         .overlay {
             if let openDrawer {
-                SideDrawerOverlay(drawer: openDrawer) {
-                    self.openDrawer = nil
-                }
+                SideDrawerOverlay(
+                    drawer: openDrawer,
+                    close: {
+                        self.openDrawer = nil
+                    },
+                    openSongs: {
+                        self.openDrawer = .songs
+                    }
+                )
                 .environmentObject(model)
             }
         }
@@ -891,6 +897,7 @@ struct SideDrawerOverlay: View {
     @EnvironmentObject private var model: AppModel
     let drawer: SideDrawer
     let close: () -> Void
+    let openSongs: () -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -907,7 +914,7 @@ struct SideDrawerOverlay: View {
                         Spacer(minLength: 0)
                     } else {
                         Spacer(minLength: 0)
-                        PlaylistSideDrawer(close: close)
+                        PlaylistSideDrawer(close: close, openSongs: openSongs)
                             .environmentObject(model)
                             .frame(width: min(proxy.size.width * 0.88, 350))
                     }
@@ -976,6 +983,7 @@ struct PlaylistSideDrawer: View {
     @State private var isConfiguring = false
     @State private var rawTabs = ""
     let close: () -> Void
+    let openSongs: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1024,7 +1032,7 @@ struct PlaylistSideDrawer: View {
                             ForEach(model.playlistTabs, id: \.self) { tab in
                                 SelectorItemButton(title: tab, selected: tab == model.currentPlaylistTab) {
                                     model.requirePremiumOrToggle {
-                                        model.selectPlaylistTab(tab, closeAfterSuccess: close)
+                                        model.selectPlaylistTab(tab, closeAfterSuccess: openSongs)
                                     }
                                 }
                             }
