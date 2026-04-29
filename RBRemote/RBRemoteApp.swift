@@ -668,7 +668,7 @@ struct PaymentEmailView: View {
                     Text("E-mail do Mercado Pago")
                         .font(.title.weight(.black))
                         .foregroundStyle(.white)
-                    Text("Informe o e-mail que sera usado no pagamento do Mercado Pago.")
+                    Text("Informe o e-mail que será usado no pagamento")
                         .foregroundStyle(Color.blueWhite.opacity(0.78))
                     Text("E-MAIL")
                         .font(.caption.weight(.black))
