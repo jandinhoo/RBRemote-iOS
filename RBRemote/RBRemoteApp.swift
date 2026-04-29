@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
     @Published var showPaymentEmail = false
     @Published var showPlaylistSelector = false
     @Published var showEqSelector = false
+    @Published var showScreenProfileSelector = false
     @Published var toastMessage = ""
     @Published var availableUpdate: UpdateInfo?
     @Published var showUpdateAlert = false
@@ -41,6 +42,7 @@ final class AppModel: ObservableObject {
     @Published var currentPlaylistTab = UserDefaults.standard.string(forKey: "current_playlist_tab") ?? ""
     @Published var eqPresetsRaw = UserDefaults.standard.string(forKey: "eq_presets_raw") ?? ""
     @Published var currentEqPreset = UserDefaults.standard.string(forKey: "current_eq_preset") ?? ""
+    @Published var screenProfileId = UserDefaults.standard.string(forKey: "screen_profile_id") ?? IPhoneScreenProfile.automatic.id
     @Published var playlistTracks: [PlaylistTrackInfo] = []
 
     private var refreshTimer: Timer?
@@ -90,6 +92,16 @@ final class AppModel: ObservableObject {
 
     var eqButtonText: String {
         currentEqPreset.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nenhum preset" : currentEqPreset
+    }
+
+    var screenProfile: IPhoneScreenProfile {
+        IPhoneScreenProfile.find(id: screenProfileId)
+    }
+
+    func saveScreenProfile(_ profile: IPhoneScreenProfile) {
+        screenProfileId = profile.id
+        UserDefaults.standard.set(profile.id, forKey: "screen_profile_id")
+        toastMessage = "Tela ajustada para \(profile.name)"
     }
 
     func start() {
@@ -437,46 +449,58 @@ struct RootView: View {
             AppBackground()
 
             GeometryReader { proxy in
-                let horizontalPadding = proxy.size.width <= 390 ? 14.0 : 18.0
-                let contentSpacing = proxy.size.height <= 760 ? 14.0 : 18.0
+                let profile = model.screenProfile
+                let layoutSize = profile.layoutSize(in: proxy.size)
+                let scale = profile.scaleToFit(in: proxy.size)
+                let scaledWidth = layoutSize.width * scale
+                let scaledHeight = layoutSize.height * scale
+                let compactWidth = layoutSize.width <= 390
+                let compactHeight = layoutSize.height <= 760
+                let horizontalPadding = compactWidth ? 14.0 : 18.0
+                let contentSpacing = compactHeight ? 14.0 : 18.0
                 let topPadding = max(proxy.safeAreaInsets.top + 10, 20)
                 let bottomPadding = max(proxy.safeAreaInsets.bottom + 18, 28)
 
-                ScrollView {
-                    VStack(spacing: contentSpacing) {
-                        HeaderCard(compact: proxy.size.width <= 390)
-                        ConfigButton(compact: proxy.size.width <= 390)
-                        QuickCommands(
-                            compact: proxy.size.height <= 760,
-                            openPlaylists: { openDrawer = .playlists }
-                        )
-                        TrackCard(
-                            title: "Faixa atual",
-                            systemImage: "music.note",
-                            track: model.playbackInfo.currentTrack,
-                            expanded: $currentExpanded
-                        ) {
-                            model.requirePremiumOrToggle {
-                                currentExpanded.toggle()
+                ZStack(alignment: .top) {
+                    ScrollView {
+                        VStack(spacing: contentSpacing) {
+                            HeaderCard(compact: compactWidth)
+                            ConfigButton(compact: compactWidth)
+                            QuickCommands(
+                                compact: compactHeight,
+                                openPlaylists: { openDrawer = .playlists }
+                            )
+                            TrackCard(
+                                title: "Faixa atual",
+                                systemImage: "music.note",
+                                track: model.playbackInfo.currentTrack,
+                                expanded: $currentExpanded
+                            ) {
+                                model.requirePremiumOrToggle {
+                                    currentExpanded.toggle()
+                                }
+                            }
+                            TrackCard(
+                                title: "Proxima faixa",
+                                systemImage: "music.note.list",
+                                track: model.playbackInfo.nextTrack,
+                                expanded: $nextExpanded
+                            ) {
+                                model.requirePremiumOrToggle {
+                                    nextExpanded.toggle()
+                                }
                             }
                         }
-                        TrackCard(
-                            title: "Proxima faixa",
-                            systemImage: "music.note.list",
-                            track: model.playbackInfo.nextTrack,
-                            expanded: $nextExpanded
-                        ) {
-                            model.requirePremiumOrToggle {
-                                nextExpanded.toggle()
-                            }
-                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, horizontalPadding)
+                        .padding(.top, topPadding)
+                        .padding(.bottom, bottomPadding)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, horizontalPadding)
-                    .padding(.top, topPadding)
-                    .padding(.bottom, bottomPadding)
+                    .frame(width: layoutSize.width, height: layoutSize.height)
+                    .scaleEffect(scale, anchor: .top)
+                    .frame(width: scaledWidth, height: scaledHeight, alignment: .top)
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -578,6 +602,85 @@ struct RootView: View {
 enum SideDrawer: Equatable {
     case songs
     case playlists
+}
+
+struct IPhoneScreenProfile: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let width: CGFloat?
+    let height: CGFloat?
+
+    var isAutomatic: Bool {
+        width == nil || height == nil
+    }
+
+    var detail: String {
+        guard let width, let height else {
+            return "Usar tamanho real do iPhone"
+        }
+        return "\(Int(width)) x \(Int(height)) pt"
+    }
+
+    func layoutSize(in actualSize: CGSize) -> CGSize {
+        guard let width, let height else {
+            return actualSize
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    func scaleToFit(in actualSize: CGSize) -> CGFloat {
+        guard let width, let height, width > 0, height > 0 else {
+            return 1
+        }
+        return min(1, actualSize.width / width, actualSize.height / height)
+    }
+
+    static let automatic = IPhoneScreenProfile(id: "auto", name: "Automatico", width: nil, height: nil)
+
+    static let all: [IPhoneScreenProfile] = [
+        automatic,
+        IPhoneScreenProfile(id: "iphone_8", name: "iPhone 8", width: 375, height: 667),
+        IPhoneScreenProfile(id: "iphone_8_plus", name: "iPhone 8 Plus", width: 414, height: 736),
+        IPhoneScreenProfile(id: "iphone_x", name: "iPhone X", width: 375, height: 812),
+        IPhoneScreenProfile(id: "iphone_xr", name: "iPhone XR", width: 414, height: 896),
+        IPhoneScreenProfile(id: "iphone_xs", name: "iPhone XS", width: 375, height: 812),
+        IPhoneScreenProfile(id: "iphone_xs_max", name: "iPhone XS Max", width: 414, height: 896),
+        IPhoneScreenProfile(id: "iphone_11", name: "iPhone 11", width: 414, height: 896),
+        IPhoneScreenProfile(id: "iphone_11_pro", name: "iPhone 11 Pro", width: 375, height: 812),
+        IPhoneScreenProfile(id: "iphone_11_pro_max", name: "iPhone 11 Pro Max", width: 414, height: 896),
+        IPhoneScreenProfile(id: "iphone_se_2", name: "iPhone SE 2", width: 375, height: 667),
+        IPhoneScreenProfile(id: "iphone_se_3", name: "iPhone SE 3", width: 375, height: 667),
+        IPhoneScreenProfile(id: "iphone_12_mini", name: "iPhone 12 mini", width: 375, height: 812),
+        IPhoneScreenProfile(id: "iphone_12", name: "iPhone 12", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_12_pro", name: "iPhone 12 Pro", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_12_pro_max", name: "iPhone 12 Pro Max", width: 428, height: 926),
+        IPhoneScreenProfile(id: "iphone_13_mini", name: "iPhone 13 mini", width: 375, height: 812),
+        IPhoneScreenProfile(id: "iphone_13", name: "iPhone 13", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_13_pro", name: "iPhone 13 Pro", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_13_pro_max", name: "iPhone 13 Pro Max", width: 428, height: 926),
+        IPhoneScreenProfile(id: "iphone_14", name: "iPhone 14", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_14_plus", name: "iPhone 14 Plus", width: 428, height: 926),
+        IPhoneScreenProfile(id: "iphone_14_pro", name: "iPhone 14 Pro", width: 393, height: 852),
+        IPhoneScreenProfile(id: "iphone_14_pro_max", name: "iPhone 14 Pro Max", width: 430, height: 932),
+        IPhoneScreenProfile(id: "iphone_15", name: "iPhone 15", width: 393, height: 852),
+        IPhoneScreenProfile(id: "iphone_15_plus", name: "iPhone 15 Plus", width: 430, height: 932),
+        IPhoneScreenProfile(id: "iphone_15_pro", name: "iPhone 15 Pro", width: 393, height: 852),
+        IPhoneScreenProfile(id: "iphone_15_pro_max", name: "iPhone 15 Pro Max", width: 430, height: 932),
+        IPhoneScreenProfile(id: "iphone_16e", name: "iPhone 16e", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_16", name: "iPhone 16", width: 393, height: 852),
+        IPhoneScreenProfile(id: "iphone_16_plus", name: "iPhone 16 Plus", width: 430, height: 932),
+        IPhoneScreenProfile(id: "iphone_16_pro", name: "iPhone 16 Pro", width: 402, height: 874),
+        IPhoneScreenProfile(id: "iphone_16_pro_max", name: "iPhone 16 Pro Max", width: 440, height: 956),
+        IPhoneScreenProfile(id: "iphone_17e", name: "iPhone 17e", width: 390, height: 844),
+        IPhoneScreenProfile(id: "iphone_17", name: "iPhone 17", width: 402, height: 874),
+        IPhoneScreenProfile(id: "iphone_air", name: "iPhone Air", width: 420, height: 912),
+        IPhoneScreenProfile(id: "iphone_17_pro", name: "iPhone 17 Pro", width: 402, height: 874),
+        IPhoneScreenProfile(id: "iphone_17_pro_max", name: "iPhone 17 Pro Max", width: 440, height: 956)
+    ]
+
+    static func find(id: String) -> IPhoneScreenProfile {
+        all.first { $0.id == id } ?? automatic
+    }
 }
 
 struct HeaderCard: View {
@@ -1456,6 +1559,11 @@ struct TutorialView: View {
                         Color.clear.frame(width: 28, height: 28)
                     }
 
+                    if step == 0 {
+                        ScreenProfileTutorialButton()
+                            .environmentObject(model)
+                    }
+
                     StepperHeader(step: step)
 
                     VStack(alignment: .leading, spacing: 18) {
@@ -1526,6 +1634,10 @@ struct TutorialView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        .fullScreenCover(isPresented: $model.showScreenProfileSelector) {
+            ScreenProfileSelectorView()
+                .environmentObject(model)
+        }
         .onAppear {
             host = model.connection.host
             port = model.connection.portText.isEmpty ? "9000" : model.connection.portText
@@ -1550,6 +1662,152 @@ struct TutorialView: View {
         case 1: return "TutorialIpconfig"
         default: return "TutorialDiscord"
         }
+    }
+}
+
+struct ScreenProfileTutorialButton: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button {
+            model.showScreenProfileSelector = true
+        } label: {
+            HStack(spacing: 14) {
+                Image(systemName: "iphone")
+                    .font(.system(size: 24, weight: .black))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.white.opacity(0.08)))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("AJUSTAR TELA IOS")
+                        .font(.subheadline.weight(.black))
+                        .kerning(1.1)
+                        .foregroundStyle(.white)
+                    Text(model.screenProfile.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .foregroundStyle(Color.blueWhite.opacity(0.75))
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            .padding(14)
+            .background(RemoteCardBackground())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct ScreenProfileSelectorView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            ScrollView {
+                VStack(spacing: 18) {
+                    HStack {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Image(systemName: "chevron.left")
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(.white)
+                        }
+
+                        Spacer()
+
+                        Text("TELA DO IPHONE")
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(.white)
+
+                        Spacer()
+
+                        Color.clear.frame(width: 28, height: 28)
+                    }
+
+                    SelectorHeader(
+                        systemImage: "iphone",
+                        title: "AJUSTAR TELA IOS",
+                        subtitle: "Atual: \(model.screenProfile.name)"
+                    )
+
+                    Text("Escolha um modelo para o app renderizar a tela usando o tamanho daquele iPhone. Isso nao muda a resolucao real do aparelho, apenas o formato da interface.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.blueWhite.opacity(0.78))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(RemoteCardBackground())
+
+                    VStack(spacing: 10) {
+                        ForEach(IPhoneScreenProfile.all) { profile in
+                            ScreenProfileRowButton(
+                                profile: profile,
+                                selected: profile.id == model.screenProfile.id
+                            ) {
+                                model.saveScreenProfile(profile)
+                                dismiss()
+                            }
+                        }
+                    }
+                    .padding(16)
+                    .background(RemoteCardBackground())
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 34)
+                .padding(.bottom, 34)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .ignoresSafeArea()
+    }
+}
+
+struct ScreenProfileRowButton: View {
+    let profile: IPhoneScreenProfile
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(Color.remoteBlue)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(profile.name)
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(.white)
+                    Text(profile.detail)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.blueWhite.opacity(0.7))
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 58)
+            .background(
+                selected
+                    ? LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    : LinearGradient(colors: [Color(hex: 0x07111F), Color(hex: 0x07111F)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 16)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(selected ? Color.remoteBlue : Color(hex: 0x20344F), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
