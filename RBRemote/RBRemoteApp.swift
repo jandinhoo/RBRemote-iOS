@@ -32,9 +32,16 @@ final class AppModel: ObservableObject {
     @Published var showTutorial = false
     @Published var showPremiumPrompt = false
     @Published var showPaymentEmail = false
+    @Published var showPlaylistSelector = false
+    @Published var showEqSelector = false
     @Published var toastMessage = ""
     @Published var availableUpdate: UpdateInfo?
     @Published var showUpdateAlert = false
+    @Published var playlistTabsRaw = UserDefaults.standard.string(forKey: "playlist_tabs_raw") ?? ""
+    @Published var currentPlaylistTab = UserDefaults.standard.string(forKey: "current_playlist_tab") ?? ""
+    @Published var eqPresetsRaw = UserDefaults.standard.string(forKey: "eq_presets_raw") ?? ""
+    @Published var currentEqPreset = UserDefaults.standard.string(forKey: "current_eq_preset") ?? ""
+    @Published var playlistTracks: [PlaylistTrackInfo] = []
 
     private var refreshTimer: Timer?
     private let radioBoss = RadioBossClient()
@@ -61,6 +68,30 @@ final class AppModel: ObservableObject {
         return days == 1 ? "Expira em 1 dia" : "Expira em \(days) dias"
     }
 
+    var playlistTabs: [String] {
+        parseStoredList(playlistTabsRaw)
+    }
+
+    var eqPresets: [String] {
+        parseStoredList(eqPresetsRaw)
+    }
+
+    var playlistButtonText: String {
+        currentPlaylistTab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nenhuma aba" : currentPlaylistTab
+    }
+
+    var playlistSongsSubtitle: String {
+        if playlistTracks.isEmpty {
+            return "Selecione uma playlist para carregar as musicas."
+        }
+        let countText = "Musicas carregadas: \(playlistTracks.count)"
+        return currentPlaylistTab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? countText : "\(currentPlaylistTab) - \(countText)"
+    }
+
+    var eqButtonText: String {
+        currentEqPreset.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Nenhum preset" : currentEqPreset
+    }
+
     func start() {
         if license?.hasLogin != true {
             showLogin = true
@@ -72,7 +103,7 @@ final class AppModel: ObservableObject {
 
         Task {
             await refreshPlayback(showErrors: false)
-            await checkForUpdates()
+            await refreshPlaylistTracks(showErrors: false)
         }
 
         refreshTimer?.invalidate()
@@ -154,14 +185,19 @@ final class AppModel: ObservableObject {
     }
 
     func sendCommand(_ command: String) async {
+        _ = await sendRemoteCommand(command)
+    }
+
+    @discardableResult
+    private func sendRemoteCommand(_ command: String) async -> Bool {
         guard license?.hasLogin == true else {
             showLogin = true
-            return
+            return false
         }
 
         guard connection.isComplete else {
             showTutorial = true
-            return
+            return false
         }
 
         isLoading = true
@@ -171,10 +207,155 @@ final class AppModel: ObservableObject {
             _ = try await radioBoss.sendCommand(connection: connection, command: command)
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             await refreshPlayback(showErrors: false)
+            return true
         } catch {
             isConnected = false
             toastMessage = "Falha ao enviar comando: \(error.localizedDescription)"
+            return false
         }
+    }
+
+    @discardableResult
+    func savePlaylistTabs(_ rawTabs: String) -> Bool {
+        let tabs = parseStoredList(rawTabs)
+        guard !tabs.isEmpty else {
+            toastMessage = "Cadastre pelo menos uma aba de playlist."
+            return false
+        }
+
+        playlistTabsRaw = rawTabs.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(playlistTabsRaw, forKey: "playlist_tabs_raw")
+        if !tabs.contains(currentPlaylistTab) {
+            currentPlaylistTab = ""
+            UserDefaults.standard.set("", forKey: "current_playlist_tab")
+        }
+        toastMessage = "Abas salvas."
+        return true
+    }
+
+    func selectPlaylistTab(_ tab: String, closeAfterSuccess: (() -> Void)? = nil) {
+        let cleanTab = tab.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTab.isEmpty else {
+            toastMessage = "Cadastre as abas de playlist primeiro."
+            return
+        }
+
+        Task {
+            if await sendRemoteCommand("playlist \(cleanTab)") {
+                currentPlaylistTab = cleanTab
+                UserDefaults.standard.set(cleanTab, forKey: "current_playlist_tab")
+                await refreshPlaylistTracks(showErrors: false)
+                showPlaylistSelector = false
+                closeAfterSuccess?()
+                toastMessage = "Playlist alterada para \(cleanTab)"
+            }
+        }
+    }
+
+    func selectNextPlaylistTab(closeAfterSuccess: (() -> Void)? = nil) {
+        let tabs = playlistTabs
+        guard !tabs.isEmpty else {
+            toastMessage = "Cadastre as abas de playlist primeiro."
+            return
+        }
+
+        let currentIndex = tabs.firstIndex(of: currentPlaylistTab)
+        let nextIndex = currentIndex.map { tabs.index(after: $0) == tabs.endIndex ? tabs.startIndex : tabs.index(after: $0) } ?? tabs.startIndex
+        selectPlaylistTab(tabs[nextIndex], closeAfterSuccess: closeAfterSuccess)
+    }
+
+    func refreshPlaylistTracks(showErrors: Bool) async {
+        guard connection.isComplete else {
+            playlistTracks = []
+            return
+        }
+
+        do {
+            let response = try await radioBoss.sendAction(
+                connection: connection,
+                action: "getplaylist2",
+                parameters: ["cnt": "0"]
+            )
+            guard (200..<300).contains(response.statusCode) else {
+                throw AppError.message("Getplaylist2 retornou HTTP \(response.statusCode).")
+            }
+            playlistTracks = try PlaylistContentParser.parse(response.body)
+        } catch {
+            playlistTracks = []
+            if showErrors {
+                isConnected = false
+                toastMessage = "Falha ao buscar musicas: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func selectPlaylistTrack(_ track: PlaylistTrackInfo, closeAfterSuccess: (() -> Void)? = nil) {
+        Task {
+            if await sendRemoteCommand("play \(track.position)") {
+                closeAfterSuccess?()
+                toastMessage = "Tocando: \(track.displayTitle)"
+            }
+        }
+    }
+
+    @discardableResult
+    func saveEqPresets(_ rawPresets: String) -> Bool {
+        let presets = parseStoredList(rawPresets)
+        guard !presets.isEmpty else {
+            toastMessage = "Cadastre pelo menos um preset do equalizador."
+            return false
+        }
+
+        eqPresetsRaw = rawPresets.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(eqPresetsRaw, forKey: "eq_presets_raw")
+        if !presets.contains(currentEqPreset) {
+            currentEqPreset = ""
+            UserDefaults.standard.set("", forKey: "current_eq_preset")
+        }
+        toastMessage = "Presets salvos."
+        return true
+    }
+
+    func selectEqPreset(_ preset: String) {
+        let cleanPreset = preset.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanPreset.isEmpty else {
+            toastMessage = "Cadastre os presets do EQ primeiro."
+            return
+        }
+
+        Task {
+            if await sendRemoteCommand("eqpreset \(cleanPreset)") {
+                currentEqPreset = cleanPreset
+                UserDefaults.standard.set(cleanPreset, forKey: "current_eq_preset")
+                showEqSelector = false
+                toastMessage = "EQ alterado para \(cleanPreset)"
+            }
+        }
+    }
+
+    func selectNextEqPreset() {
+        let presets = eqPresets
+        guard !presets.isEmpty else {
+            toastMessage = "Cadastre os presets do EQ primeiro."
+            return
+        }
+
+        let currentIndex = presets.firstIndex(of: currentEqPreset)
+        let nextIndex = currentIndex.map { presets.index(after: $0) == presets.endIndex ? presets.startIndex : presets.index(after: $0) } ?? presets.startIndex
+        selectEqPreset(presets[nextIndex])
+    }
+
+    private func parseStoredList(_ rawValue: String) -> [String] {
+        var seen = Set<String>()
+        var values: [String] = []
+        for part in rawValue.components(separatedBy: CharacterSet(charactersIn: ",\n\r")) {
+            let value = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !value.isEmpty && !seen.contains(value) {
+                values.append(value)
+                seen.insert(value)
+            }
+        }
+        return values
     }
 
     func refreshPlayback(showErrors: Bool) async {
@@ -249,6 +430,7 @@ struct RootView: View {
     @EnvironmentObject private var model: AppModel
     @State private var currentExpanded = false
     @State private var nextExpanded = false
+    @State private var openDrawer: SideDrawer?
 
     var body: some View {
         ZStack {
@@ -264,7 +446,10 @@ struct RootView: View {
                     VStack(spacing: contentSpacing) {
                         HeaderCard(compact: proxy.size.width <= 390)
                         ConfigButton(compact: proxy.size.width <= 390)
-                        QuickCommands(compact: proxy.size.height <= 760)
+                        QuickCommands(
+                            compact: proxy.size.height <= 760,
+                            openPlaylists: { openDrawer = .playlists }
+                        )
                         TrackCard(
                             title: "Faixa atual",
                             systemImage: "music.note",
@@ -296,6 +481,8 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
+        .contentShape(Rectangle())
+        .simultaneousGesture(sideDrawerGesture)
         .fullScreenCover(isPresented: $model.showLogin) {
             LoginView()
                 .environmentObject(model)
@@ -307,6 +494,14 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $model.showPaymentEmail) {
             PaymentEmailView()
+                .environmentObject(model)
+        }
+        .fullScreenCover(isPresented: $model.showPlaylistSelector) {
+            PlaylistSelectorView()
+                .environmentObject(model)
+        }
+        .fullScreenCover(isPresented: $model.showEqSelector) {
+            EqSelectorView()
                 .environmentObject(model)
         }
         .alert("Recurso premium", isPresented: $model.showPremiumPrompt) {
@@ -344,6 +539,14 @@ struct RootView: View {
                     .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 18))
             }
         }
+        .overlay {
+            if let openDrawer {
+                SideDrawerOverlay(drawer: openDrawer) {
+                    self.openDrawer = nil
+                }
+                .environmentObject(model)
+            }
+        }
         .onAppear {
             model.start()
         }
@@ -351,6 +554,30 @@ struct RootView: View {
             model.stop()
         }
     }
+
+    private var sideDrawerGesture: some Gesture {
+        DragGesture(minimumDistance: 45)
+            .onEnded { value in
+                let horizontal = value.translation.width
+                let vertical = abs(value.translation.height)
+                guard abs(horizontal) > vertical * 1.3 else { return }
+
+                if horizontal > 80 {
+                    model.requirePremiumOrToggle {
+                        openDrawer = .songs
+                    }
+                } else if horizontal < -80 {
+                    model.requirePremiumOrToggle {
+                        openDrawer = .playlists
+                    }
+                }
+            }
+    }
+}
+
+private enum SideDrawer: Equatable {
+    case songs
+    case playlists
 }
 
 struct HeaderCard: View {
@@ -467,6 +694,7 @@ struct ConfigButton: View {
 struct QuickCommands: View {
     @EnvironmentObject private var model: AppModel
     var compact = false
+    let openPlaylists: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 10 : 14) {
@@ -490,8 +718,17 @@ struct QuickCommands: View {
                 }
             }
 
-            CommandButton(title: "STOP", systemImage: "stop.fill", locked: !model.hasPremiumAccess, wide: true, compact: compact) {
-                model.sendPremiumCommand("stop")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: compact ? 10 : 12) {
+                CommandButton(title: "EQ", systemImage: "slider.horizontal.3", subtitle: model.eqButtonText, locked: !model.hasPremiumAccess, compact: compact) {
+                    model.requirePremiumOrToggle {
+                        model.showEqSelector = true
+                    }
+                }
+                CommandButton(title: "PLAYLIST", systemImage: "music.note.list", subtitle: model.playlistButtonText, locked: !model.hasPremiumAccess, compact: compact) {
+                    model.requirePremiumOrToggle {
+                        openPlaylists()
+                    }
+                }
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: compact ? 10 : 12) {
@@ -509,6 +746,7 @@ struct QuickCommands: View {
 struct CommandButton: View {
     let title: String
     let systemImage: String
+    var subtitle: String? = nil
     let locked: Bool
     var wide = false
     var compact = false
@@ -520,18 +758,482 @@ struct CommandButton: View {
                 Image(systemName: locked ? "lock.fill" : systemImage)
                     .font(.system(size: wide ? 20 : (compact ? 25 : 30), weight: .black))
                     .foregroundStyle(Color.remoteBlue)
-                Text(title)
-                    .font((compact ? Font.caption : Font.subheadline).weight(.black))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-                    .allowsTightening(true)
-                    .foregroundStyle(.white)
-                    .layoutPriority(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font((compact ? Font.caption : Font.subheadline).weight(.black))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                        .allowsTightening(true)
+                        .foregroundStyle(.white)
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .foregroundStyle(Color.blueWhite.opacity(0.7))
+                    }
+                }
+                .layoutPriority(1)
             }
             .frame(maxWidth: .infinity)
             .frame(height: wide ? (compact ? 60 : 70) : (compact ? 76 : 92))
             .background(RemoteCardBackground())
             .opacity(locked ? 0.48 : 1)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SideDrawerOverlay: View {
+    @EnvironmentObject private var model: AppModel
+    let drawer: SideDrawer
+    let close: () -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.46)
+                    .ignoresSafeArea()
+                    .onTapGesture(perform: close)
+
+                HStack(spacing: 0) {
+                    if drawer == .songs {
+                        PlaylistSongsDrawer(close: close)
+                            .environmentObject(model)
+                            .frame(width: min(proxy.size.width * 0.88, 350))
+                        Spacer(minLength: 0)
+                    } else {
+                        Spacer(minLength: 0)
+                        PlaylistSideDrawer(close: close)
+                            .environmentObject(model)
+                            .frame(width: min(proxy.size.width * 0.88, 350))
+                    }
+                }
+            }
+            .transition(.move(edge: drawer == .songs ? .leading : .trailing))
+            .animation(.easeOut(duration: 0.22), value: drawer)
+        }
+    }
+}
+
+struct PlaylistSongsDrawer: View {
+    @EnvironmentObject private var model: AppModel
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("MUSICAS DA PLAYLIST")
+                .font(.title3.weight(.black))
+                .kerning(1.1)
+                .foregroundStyle(.white)
+
+            Text(model.playlistSongsSubtitle)
+                .font(.subheadline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+            ScrollView {
+                VStack(spacing: 10) {
+                    if model.playlistTracks.isEmpty {
+                        DrawerInfoCard(text: "Selecione uma playlist para carregar as musicas.")
+                    } else {
+                        ForEach(model.playlistTracks) { track in
+                            SelectorItemButton(
+                                title: "\(track.position). \(track.displayTitle)",
+                                selected: false
+                            ) {
+                                model.requirePremiumOrToggle {
+                                    model.selectPlaylistTrack(track, closeAfterSuccess: close)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            SelectorActionButton(title: "ATUALIZAR MUSICAS", emphasized: true) {
+                Task {
+                    await model.refreshPlaylistTracks(showErrors: true)
+                }
+            }
+
+            SelectorActionButton(title: "VOLTAR", emphasized: false, action: close)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 40)
+        .padding(.bottom, 24)
+        .frame(maxHeight: .infinity)
+        .background(AppBackground())
+    }
+}
+
+struct PlaylistSideDrawer: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var isConfiguring = false
+    @State private var rawTabs = ""
+    let close: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("PLAYLISTS")
+                .font(.title3.weight(.black))
+                .kerning(1.1)
+                .foregroundStyle(.white)
+
+            Text(model.currentPlaylistTab.isEmpty ? "Nenhuma aba selecionada" : "Tocando: \(model.currentPlaylistTab)")
+                .font(.subheadline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+            if isConfiguring {
+                Text("Digite uma aba por linha ou separe por virgula. O nome precisa estar igual ao RadioBOSS.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+                TextEditor(text: $rawTabs)
+                    .foregroundColor(.white)
+                    .accentColor(Color.remoteBlue)
+                    .frame(minHeight: 140)
+                    .padding(10)
+                    .background(InputBackground())
+
+                SelectorActionButton(title: "SALVAR ABAS", emphasized: true) {
+                    if model.savePlaylistTabs(rawTabs) {
+                        isConfiguring = false
+                    }
+                }
+
+                SelectorActionButton(title: "CANCELAR", emphasized: false) {
+                    rawTabs = model.playlistTabsRaw
+                    isConfiguring = false
+                }
+            } else {
+                ScrollView {
+                    VStack(spacing: 10) {
+                        if model.playlistTabs.isEmpty {
+                            SelectorItemButton(title: "Cadastre as abas de playlist primeiro.", selected: false) {
+                                rawTabs = model.playlistTabsRaw
+                                isConfiguring = true
+                            }
+                        } else {
+                            ForEach(model.playlistTabs, id: \.self) { tab in
+                                SelectorItemButton(title: tab, selected: tab == model.currentPlaylistTab) {
+                                    model.requirePremiumOrToggle {
+                                        model.selectPlaylistTab(tab, closeAfterSuccess: close)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SelectorActionButton(title: "PROXIMA PLAYLIST", emphasized: true) {
+                    model.selectNextPlaylistTab(closeAfterSuccess: close)
+                }
+
+                SelectorActionButton(title: "CONFIGURAR ABAS", emphasized: false) {
+                    rawTabs = model.playlistTabsRaw
+                    isConfiguring = true
+                }
+
+                SelectorActionButton(title: "VOLTAR", emphasized: false, action: close)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 40)
+        .padding(.bottom, 24)
+        .frame(maxHeight: .infinity)
+        .background(AppBackground())
+        .onAppear {
+            rawTabs = model.playlistTabsRaw
+        }
+    }
+}
+
+struct DrawerInfoCard: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(Color.blueWhite.opacity(0.75))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(RemoteCardBackground())
+    }
+}
+
+struct PlaylistSelectorView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var isConfiguring = false
+    @State private var rawTabs = ""
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            ScrollView {
+                VStack(spacing: 20) {
+                    SelectorHeader(
+                        systemImage: "music.note.list",
+                        title: "PLAYLIST",
+                        subtitle: model.currentPlaylistTab.isEmpty ? "Nenhuma aba selecionada" : "Tocando: \(model.currentPlaylistTab)"
+                    )
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        if isConfiguring {
+                            Text("Digite uma aba por linha ou separe por virgula. O nome precisa estar igual ao RadioBOSS.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+                            TextEditor(text: $rawTabs)
+                                .foregroundColor(.white)
+                                .accentColor(Color.remoteBlue)
+                                .frame(minHeight: 140)
+                                .padding(10)
+                                .background(InputBackground())
+
+                            SelectorActionButton(title: "SALVAR ABAS", emphasized: true) {
+                                if model.savePlaylistTabs(rawTabs) {
+                                    isConfiguring = false
+                                }
+                            }
+
+                            SelectorActionButton(title: "CANCELAR", emphasized: false) {
+                                rawTabs = model.playlistTabsRaw
+                                isConfiguring = false
+                            }
+                        } else {
+                            Text("Escolha uma aba cadastrada para mandar o RadioBOSS mudar de playlist.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+                            if model.playlistTabs.isEmpty {
+                                SelectorItemButton(title: "Cadastre as abas de playlist primeiro.", selected: false) {
+                                    rawTabs = model.playlistTabsRaw
+                                    isConfiguring = true
+                                }
+                            } else {
+                                ForEach(model.playlistTabs, id: \.self) { tab in
+                                    SelectorItemButton(
+                                        title: tab,
+                                        selected: tab == model.currentPlaylistTab
+                                    ) {
+                                        model.selectPlaylistTab(tab)
+                                    }
+                                }
+                            }
+
+                            SelectorActionButton(title: "PROXIMA PLAYLIST", emphasized: true) {
+                                model.selectNextPlaylistTab()
+                            }
+
+                            SelectorActionButton(title: "CONFIGURAR ABAS", emphasized: false) {
+                                rawTabs = model.playlistTabsRaw
+                                isConfiguring = true
+                            }
+
+                            SelectorActionButton(title: "VOLTAR", emphasized: false) {
+                                model.showPlaylistSelector = false
+                            }
+                        }
+                    }
+                    .padding(22)
+                    .background(RemoteCardBackground())
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 34)
+                .padding(.bottom, 34)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            rawTabs = model.playlistTabsRaw
+        }
+    }
+}
+
+struct EqSelectorView: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var isConfiguring = false
+    @State private var rawPresets = ""
+
+    var body: some View {
+        ZStack {
+            AppBackground()
+
+            ScrollView {
+                VStack(spacing: 20) {
+                    SelectorHeader(
+                        systemImage: "slider.horizontal.3",
+                        title: "EQUALIZADOR",
+                        subtitle: model.currentEqPreset.isEmpty ? "Nenhum preset selecionado" : "Preset atual: \(model.currentEqPreset)"
+                    )
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        if isConfiguring {
+                            Text("Digite um preset por linha ou separe por virgula. O nome precisa estar igual ao preset criado no RadioBOSS.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+                            TextEditor(text: $rawPresets)
+                                .foregroundColor(.white)
+                                .accentColor(Color.remoteBlue)
+                                .frame(minHeight: 140)
+                                .padding(10)
+                                .background(InputBackground())
+
+                            SelectorActionButton(title: "SALVAR PRESETS", emphasized: true) {
+                                if model.saveEqPresets(rawPresets) {
+                                    isConfiguring = false
+                                }
+                            }
+
+                            SelectorActionButton(title: "CANCELAR", emphasized: false) {
+                                rawPresets = model.eqPresetsRaw
+                                isConfiguring = false
+                            }
+                        } else {
+                            Text("Escolha um preset cadastrado para mandar o RadioBOSS trocar o equalizador.")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.blueWhite.opacity(0.75))
+
+                            if model.eqPresets.isEmpty {
+                                SelectorItemButton(title: "Cadastre os presets do EQ primeiro.", selected: false) {
+                                    rawPresets = model.eqPresetsRaw
+                                    isConfiguring = true
+                                }
+                            } else {
+                                ForEach(model.eqPresets, id: \.self) { preset in
+                                    SelectorItemButton(
+                                        title: preset,
+                                        selected: preset == model.currentEqPreset
+                                    ) {
+                                        model.selectEqPreset(preset)
+                                    }
+                                }
+                            }
+
+                            SelectorActionButton(title: "PROXIMO PRESET", emphasized: true) {
+                                model.selectNextEqPreset()
+                            }
+
+                            SelectorActionButton(title: "CONFIGURAR PRESETS", emphasized: false) {
+                                rawPresets = model.eqPresetsRaw
+                                isConfiguring = true
+                            }
+
+                            SelectorActionButton(title: "VOLTAR", emphasized: false) {
+                                model.showEqSelector = false
+                            }
+                        }
+                    }
+                    .padding(22)
+                    .background(RemoteCardBackground())
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 34)
+                .padding(.bottom, 34)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            rawPresets = model.eqPresetsRaw
+        }
+    }
+}
+
+struct SelectorHeader: View {
+    let systemImage: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Image(systemName: systemImage)
+                .font(.system(size: 30, weight: .black))
+                .foregroundStyle(Color.remoteBlue)
+                .frame(width: 64, height: 64)
+                .background(Circle().stroke(Color.remoteBlue, lineWidth: 1.4))
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(Color.blueWhite.opacity(0.75))
+            }
+
+            Spacer()
+        }
+        .padding(18)
+        .background(RemoteCardBackground())
+    }
+}
+
+struct SelectorItemButton: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(Color.remoteBlue)
+
+                Text(selected ? "ATUAL: \(title)" : title)
+                    .font(.subheadline.weight(.black))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .foregroundStyle(.white)
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background(
+                selected
+                    ? LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    : LinearGradient(colors: [Color(hex: 0x07111F), Color(hex: 0x07111F)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 16)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(selected ? Color.remoteBlue : Color(hex: 0x20344F), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SelectorActionButton: View {
+    let title: String
+    let emphasized: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.black))
+                .kerning(1.2)
+                .foregroundStyle(emphasized ? .white : Color.blueWhite.opacity(0.85))
+                .frame(maxWidth: .infinity)
+                .frame(height: emphasized ? 56 : 50)
+                .background(
+                    emphasized
+                        ? LinearGradient(colors: [Color.remoteBlue, Color.deepBlue], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(colors: [Color(hex: 0x07111F).opacity(0.7), Color(hex: 0x07111F).opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 16)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -543,6 +1245,11 @@ struct TrackCard: View {
     let track: TrackInfo
     @Binding var expanded: Bool
     let action: () -> Void
+
+    private var collapsedSubtitle: String {
+        let title = track.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? "-" : title
+    }
 
     var body: some View {
         Button(action: action) {
@@ -560,9 +1267,10 @@ struct TrackCard: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                             .foregroundStyle(.white)
-                        Text("Toque para visualizar")
+                        Text(collapsedSubtitle)
                             .font(.subheadline)
                             .lineLimit(1)
+                            .truncationMode(.tail)
                             .foregroundStyle(Color.blueWhite.opacity(0.72))
                     }
 
@@ -1032,7 +1740,19 @@ final class RadioBossClient {
         try await sendRequest(connection: connection, parameter: "action", value: action)
     }
 
-    private func sendRequest(connection: ConnectionConfig, parameter: String, value: String) async throws -> CommandResponse {
+    func sendAction(connection: ConnectionConfig, action: String, parameters: [String: String]) async throws -> CommandResponse {
+        let queryItems = parameters.map { item in
+            URLQueryItem(name: item.key, value: item.value)
+        }
+        return try await sendRequest(connection: connection, parameter: "action", value: action, extraQueryItems: queryItems)
+    }
+
+    private func sendRequest(
+        connection: ConnectionConfig,
+        parameter: String,
+        value: String,
+        extraQueryItems: [URLQueryItem] = []
+    ) async throws -> CommandResponse {
         var components = URLComponents()
         components.scheme = "http"
         components.host = normalizeHost(connection.host)
@@ -1041,7 +1761,7 @@ final class RadioBossClient {
         components.queryItems = [
             URLQueryItem(name: "pass", value: connection.password),
             URLQueryItem(name: parameter, value: value)
-        ]
+        ] + extraQueryItems
 
         guard let url = components.url else {
             throw AppError.message("URL invalida.")
@@ -1072,10 +1792,13 @@ final class RadioBossClient {
 }
 
 final class LicenseClient {
+    private let platform = "ios"
+
     func register(login: String, deviceId: String) async throws -> LicenseStatus {
         let json = try await post(path: "/api/users/register", body: [
             "login": login,
-            "device_id": deviceId
+            "device_id": deviceId,
+            "platform": platform
         ])
         return try parseLicense(json)
     }
@@ -1084,7 +1807,8 @@ final class LicenseClient {
         var components = URLComponents(string: AppConfig.licenseServerBaseURL + "/api/license/status")
         components?.queryItems = [
             URLQueryItem(name: "login", value: login),
-            URLQueryItem(name: "device_id", value: deviceId)
+            URLQueryItem(name: "device_id", value: deviceId),
+            URLQueryItem(name: "platform", value: platform)
         ]
         guard let url = components?.url else { throw AppError.message("URL invalida.") }
         let json = try await request(url: url, method: "GET", body: nil)
@@ -1095,6 +1819,7 @@ final class LicenseClient {
         let json = try await post(path: "/api/subscriptions/create", body: [
             "login": login,
             "device_id": deviceId,
+            "platform": platform,
             "payer_email": payerEmail,
             "coupon_code": couponCode.trimmingCharacters(in: .whitespacesAndNewlines)
         ])
@@ -1159,6 +1884,29 @@ struct TrackInfo {
     }
 }
 
+struct PlaylistTrackInfo: Identifiable {
+    let position: Int
+    let filename: String
+    let title: String
+    let album: String
+
+    var id: String { "\(position)|\(filename)|\(title)" }
+
+    var fileNameOnly: String {
+        filename.replacingOccurrences(of: "\\", with: "/").split(separator: "/").last.map(String.init) ?? filename
+    }
+
+    var displayTitle: String {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanTitle.isEmpty {
+            return cleanTitle
+        }
+
+        let cleanFileName = fileNameOnly.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanFileName.isEmpty ? "-" : cleanFileName
+    }
+}
+
 struct PlaybackInfo {
     let currentTrack: TrackInfo
     let previousTrack: TrackInfo
@@ -1169,6 +1917,106 @@ struct PlaybackInfo {
         previousTrack: TrackInfo(filename: "", title: "", album: ""),
         nextTrack: TrackInfo(filename: "", title: "", album: "")
     )
+}
+
+enum PlaylistContentParser {
+    static func parse(_ raw: String) throws -> [PlaylistTrackInfo] {
+        let xml = try extractXmlDocument(raw)
+        guard let regex = try? NSRegularExpression(pattern: "<TRACK\\b([^>]*)/?\\s*>", options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return []
+        }
+
+        let range = NSRange(xml.startIndex..<xml.endIndex, in: xml)
+        let matches = regex.matches(in: xml, range: range)
+        var tracks: [PlaylistTrackInfo] = []
+        var fallbackPosition = 1
+
+        for match in matches {
+            guard match.numberOfRanges > 1, let attributesRange = Range(match.range(at: 1), in: xml) else {
+                continue
+            }
+
+            let attributes = String(xml[attributesRange])
+            let position = readPosition(from: attributes, fallbackPosition: fallbackPosition)
+            let filename = readAttribute("FILENAME", from: attributes)
+            let title = firstNonEmpty(
+                readAttribute("TITLE", from: attributes),
+                readAttribute("CASTTITLE", from: attributes),
+                readAttribute("ITEMTITLE", from: attributes)
+            )
+            let album = readAttribute("ALBUM", from: attributes)
+
+            tracks.append(PlaylistTrackInfo(position: position, filename: filename, title: title, album: album))
+            fallbackPosition += 1
+        }
+
+        return tracks
+    }
+
+    private static func readPosition(from attributes: String, fallbackPosition: Int) -> Int {
+        let playlistIndex = readAttribute("PLAYLISTINDEX", from: attributes)
+        let index = firstNonEmpty(readAttribute("INDEX", from: attributes), playlistIndex)
+
+        guard let parsed = Int(index) else {
+            return fallbackPosition
+        }
+
+        if !playlistIndex.isEmpty, playlistIndex == index {
+            return parsed + 1
+        }
+
+        return max(1, parsed)
+    }
+
+    private static func extractXmlDocument(_ raw: String) throws -> String {
+        let value = raw.replacingOccurrences(of: "\u{FEFF}", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { throw AppError.message("Resposta vazia no getplaylist2.") }
+
+        let ns = value as NSString
+        let lower = value.lowercased() as NSString
+        let start = lower.range(of: "<playlist").location
+        let endRange = lower.range(of: "</playlist>", options: .backwards)
+
+        if start != NSNotFound, endRange.location != NSNotFound, endRange.location > start {
+            let length = endRange.location - start + endRange.length
+            return ns.substring(with: NSRange(location: start, length: length))
+        }
+
+        throw AppError.message("A resposta nao contem o XML Playlist do getplaylist2.")
+    }
+
+    private static func readAttribute(_ name: String, from attributes: String) -> String {
+        let value = firstMatch("\\b\(name)\\s*=\\s*\"([^\"]*)\"", in: attributes) ?? ""
+        return decodeXmlEntities(value).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func firstMatch(_ pattern: String, in text: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else {
+            return nil
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1 else {
+            return nil
+        }
+        guard let swiftRange = Range(match.range(at: 1), in: text) else {
+            return nil
+        }
+        return String(text[swiftRange])
+    }
+
+    private static func firstNonEmpty(_ values: String...) -> String {
+        values.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    private static func decodeXmlEntities(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&apos;", with: "'")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+    }
 }
 
 enum PlaybackInfoParser {
