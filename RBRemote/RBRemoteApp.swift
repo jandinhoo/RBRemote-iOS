@@ -458,7 +458,7 @@ struct RootView: View {
                 let compactHeight = layoutSize.height <= 760
                 let horizontalPadding = compactWidth ? 14.0 : 18.0
                 let contentSpacing = compactHeight ? 14.0 : 18.0
-                let topPadding = max(proxy.safeAreaInsets.top + 10, 20)
+                let topPadding = max(proxy.safeAreaInsets.top + 18, 28)
                 let bottomPadding = max(proxy.safeAreaInsets.bottom + 18, 28)
 
                 ZStack(alignment: .top) {
@@ -504,7 +504,6 @@ struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
         .contentShape(Rectangle())
         .simultaneousGesture(sideDrawerGesture)
         .fullScreenCover(isPresented: $model.showLogin) {
@@ -1152,7 +1151,6 @@ struct PlaylistSelectorView: View {
                 .padding(.bottom, 34)
             }
         }
-        .ignoresSafeArea()
         .onAppear {
             rawTabs = model.playlistTabsRaw
         }
@@ -1242,7 +1240,6 @@ struct EqSelectorView: View {
                 .padding(.bottom, 34)
             }
         }
-        .ignoresSafeArea()
         .onAppear {
             rawPresets = model.eqPresetsRaw
         }
@@ -1463,7 +1460,6 @@ struct LoginView: View {
             .padding(18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
     }
 }
 
@@ -1526,7 +1522,6 @@ struct PaymentEmailView: View {
             .padding(18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
     }
 }
 
@@ -1633,7 +1628,6 @@ struct TutorialView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
         .fullScreenCover(isPresented: $model.showScreenProfileSelector) {
             ScreenProfileSelectorView()
                 .environmentObject(model)
@@ -1766,7 +1760,6 @@ struct ScreenProfileSelectorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
     }
 }
 
