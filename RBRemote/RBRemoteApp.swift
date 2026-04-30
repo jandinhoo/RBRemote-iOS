@@ -1540,6 +1540,7 @@ struct TutorialView: View {
     @State private var host = ""
     @State private var port = "9000"
     @State private var password = ""
+    private let discordLink = "https://discord.gg/qknveREsYH"
 
     var body: some View {
         ZStack {
@@ -1585,11 +1586,22 @@ struct TutorialView: View {
                                 .foregroundStyle(Color.blueWhite.opacity(0.78))
                         }
 
-                        Image(stepImage)
-                            .resizable()
-                            .scaledToFit()
-                            .padding(8)
-                            .background(InputBackground())
+                        if let stepImage {
+                            Image(stepImage)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(8)
+                                .background(InputBackground())
+                        }
+
+                        if step == 2, let discordURL = URL(string: discordLink) {
+                            Link(discordLink, destination: discordURL)
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(Color.remoteBlue)
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(InputBackground())
+                        }
 
                         if step == 0 {
                             Text("COLOQUE AQUI A PORTA E SENHA DO RADIO BOSS")
@@ -1654,15 +1666,15 @@ struct TutorialView: View {
         case 1:
             return "2. Abra o cmd do seu Computador e digite IPCONFIG"
         default:
-            return "3. Se der algum erro e nao estiver conectando, voce precisara liberar o RadioBoss no seu firewall, se nao souber como fazer procure o criador desse app pelo discord Jandinho."
+            return "Tudo configurado, se tiver com problemas, entre no discord iJ DEV e pe\u{00E7}a ajuda"
         }
     }
 
-    private var stepImage: String {
+    private var stepImage: String? {
         switch step {
         case 0: return "TutorialApi"
         case 1: return "TutorialIpconfig"
-        default: return "TutorialDiscord"
+        default: return nil
         }
     }
 }
