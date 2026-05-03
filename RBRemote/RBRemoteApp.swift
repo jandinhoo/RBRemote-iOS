@@ -49,6 +49,7 @@ final class AppModel: ObservableObject {
     private let radioBoss = RadioBossClient()
     private let licenseClient = LicenseClient()
     private let updateClient = UpdateClient()
+    private var lastSettingsSyncLogin = ""
 
     var hasPremiumAccess: Bool {
         license?.isPremium == true
@@ -102,6 +103,9 @@ final class AppModel: ObservableObject {
         screenProfileId = profile.id
         UserDefaults.standard.set(profile.id, forKey: "screen_profile_id")
         toastMessage = "Tela ajustada para \(profile.name)"
+        Task {
+            await uploadSettings()
+        }
     }
 
     func start() {
@@ -134,6 +138,9 @@ final class AppModel: ObservableObject {
     func saveConnection(host: String, port: String, password: String) {
         connection = ConnectionConfig(host: host, portText: port, password: password)
         ConnectionStore.save(connection)
+        Task {
+            await uploadSettings()
+        }
     }
 
     func register(login: String) async {
@@ -150,6 +157,7 @@ final class AppModel: ObservableObject {
             let status = try await licenseClient.register(login: normalized, deviceId: LicenseStore.deviceId)
             license = status
             LicenseStore.save(status)
+            syncSettingsAfterLicense(status)
             showLogin = false
             toastMessage = "Login criado. Conta FREE."
         } catch {
@@ -165,11 +173,75 @@ final class AppModel: ObservableObject {
             let status = try await licenseClient.fetchStatus(login: license.login, deviceId: LicenseStore.deviceId)
             self.license = status
             LicenseStore.save(status)
+            syncSettingsAfterLicense(status)
         } catch {
             if showErrors {
                 toastMessage = "Nao foi possivel verificar sua conta: \(error.localizedDescription)"
             }
         }
+    }
+
+    private func syncSettingsAfterLicense(_ status: LicenseStatus) {
+        guard status.hasLogin else { return }
+        guard status.login != lastSettingsSyncLogin else { return }
+        lastSettingsSyncLogin = status.login
+        Task {
+            await downloadOrCreateSettings(status)
+        }
+    }
+
+    private func downloadOrCreateSettings(_ status: LicenseStatus) async {
+        do {
+            let response = try await licenseClient.fetchAppSettings(login: status.login, deviceId: LicenseStore.deviceId)
+            if response.exists {
+                applySettings(response.settings)
+                await refreshPlayback(showErrors: false)
+                await refreshPlaylistTracks(showErrors: false)
+                return
+            }
+
+            let localSettings = currentAppSettings()
+            if localSettings.hasAnyValue {
+                try await licenseClient.saveAppSettings(login: status.login, deviceId: LicenseStore.deviceId, settings: localSettings)
+            }
+        } catch {
+            // A sincronizacao nao deve impedir o uso local do RB Remote.
+        }
+    }
+
+    private func uploadSettings() async {
+        guard let license, license.hasLogin else { return }
+        do {
+            try await licenseClient.saveAppSettings(login: license.login, deviceId: LicenseStore.deviceId, settings: currentAppSettings())
+        } catch {
+            // Configuracoes locais continuam salvas mesmo sem internet no momento.
+        }
+    }
+
+    private func currentAppSettings() -> AppSettings {
+        AppSettings(
+            connection: connection,
+            eqPresetsRaw: eqPresetsRaw,
+            currentEqPreset: currentEqPreset,
+            playlistTabsRaw: playlistTabsRaw,
+            currentPlaylistTab: currentPlaylistTab,
+            screenProfileId: screenProfileId
+        )
+    }
+
+    private func applySettings(_ settings: AppSettings) {
+        connection = settings.connection
+        ConnectionStore.save(settings.connection)
+        eqPresetsRaw = settings.eqPresetsRaw
+        currentEqPreset = settings.currentEqPreset
+        playlistTabsRaw = settings.playlistTabsRaw
+        currentPlaylistTab = settings.currentPlaylistTab
+        screenProfileId = settings.screenProfileId.isEmpty ? IPhoneScreenProfile.automatic.id : settings.screenProfileId
+        UserDefaults.standard.set(eqPresetsRaw, forKey: "eq_presets_raw")
+        UserDefaults.standard.set(currentEqPreset, forKey: "current_eq_preset")
+        UserDefaults.standard.set(playlistTabsRaw, forKey: "playlist_tabs_raw")
+        UserDefaults.standard.set(currentPlaylistTab, forKey: "current_playlist_tab")
+        UserDefaults.standard.set(screenProfileId, forKey: "screen_profile_id")
     }
 
     func sendNextCommand() {
@@ -241,6 +313,9 @@ final class AppModel: ObservableObject {
             currentPlaylistTab = ""
             UserDefaults.standard.set("", forKey: "current_playlist_tab")
         }
+        Task {
+            await uploadSettings()
+        }
         toastMessage = "Abas salvas."
         return true
     }
@@ -257,6 +332,7 @@ final class AppModel: ObservableObject {
                 currentPlaylistTab = cleanTab
                 UserDefaults.standard.set(cleanTab, forKey: "current_playlist_tab")
                 await refreshPlaylistTracks(showErrors: false)
+                await uploadSettings()
                 showPlaylistSelector = false
                 closeAfterSuccess?()
                 toastMessage = "Playlist alterada para \(cleanTab)"
@@ -324,6 +400,9 @@ final class AppModel: ObservableObject {
             currentEqPreset = ""
             UserDefaults.standard.set("", forKey: "current_eq_preset")
         }
+        Task {
+            await uploadSettings()
+        }
         toastMessage = "Presets salvos."
         return true
     }
@@ -339,6 +418,7 @@ final class AppModel: ObservableObject {
             if await sendRemoteCommand("eqpreset \(cleanPreset)") {
                 currentEqPreset = cleanPreset
                 UserDefaults.standard.set(cleanPreset, forKey: "current_eq_preset")
+                await uploadSettings()
                 showEqSelector = false
                 toastMessage = "EQ alterado para \(cleanPreset)"
             }
@@ -1952,6 +2032,73 @@ enum ConnectionStore {
     }
 }
 
+struct AppSettings {
+    let connection: ConnectionConfig
+    let eqPresetsRaw: String
+    let currentEqPreset: String
+    let playlistTabsRaw: String
+    let currentPlaylistTab: String
+    let screenProfileId: String
+
+    var hasAnyValue: Bool {
+        !connection.host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || connection.portText.trimmingCharacters(in: .whitespacesAndNewlines) != "9000"
+            || !connection.password.isEmpty
+            || !eqPresetsRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !currentEqPreset.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !playlistTabsRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !currentPlaylistTab.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !screenProfileId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    init(
+        connection: ConnectionConfig,
+        eqPresetsRaw: String,
+        currentEqPreset: String,
+        playlistTabsRaw: String,
+        currentPlaylistTab: String,
+        screenProfileId: String
+    ) {
+        self.connection = connection
+        self.eqPresetsRaw = eqPresetsRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.currentEqPreset = currentEqPreset.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.playlistTabsRaw = playlistTabsRaw.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.currentPlaylistTab = currentPlaylistTab.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.screenProfileId = screenProfileId.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    init(json: [String: Any]) {
+        self.connection = ConnectionConfig(
+            host: json["host"] as? String ?? "",
+            portText: json["port"] as? String ?? "9000",
+            password: json["password"] as? String ?? ""
+        )
+        self.eqPresetsRaw = json["eq_presets_raw"] as? String ?? ""
+        self.currentEqPreset = json["eq_current_preset"] as? String ?? ""
+        self.playlistTabsRaw = json["playlist_tabs_raw"] as? String ?? ""
+        self.currentPlaylistTab = json["playlist_current_tab"] as? String ?? ""
+        self.screenProfileId = json["screen_profile_id"] as? String ?? IPhoneScreenProfile.automatic.id
+    }
+
+    var dictionary: [String: Any] {
+        [
+            "host": connection.host.trimmingCharacters(in: .whitespacesAndNewlines),
+            "port": connection.portText.trimmingCharacters(in: .whitespacesAndNewlines),
+            "password": connection.password,
+            "eq_presets_raw": eqPresetsRaw,
+            "eq_current_preset": currentEqPreset,
+            "playlist_tabs_raw": playlistTabsRaw,
+            "playlist_current_tab": currentPlaylistTab,
+            "screen_profile_id": screenProfileId
+        ]
+    }
+}
+
+struct AppSettingsResponse {
+    let exists: Bool
+    let settings: AppSettings
+}
+
 struct LicenseStatus: Codable {
     let login: String
     let deviceId: String
@@ -2100,7 +2247,32 @@ final class LicenseClient {
         return url
     }
 
-    private func post(path: String, body: [String: String]) async throws -> [String: Any] {
+    func fetchAppSettings(login: String, deviceId: String) async throws -> AppSettingsResponse {
+        var components = URLComponents(string: AppConfig.licenseServerBaseURL + "/api/app-settings")
+        components?.queryItems = [
+            URLQueryItem(name: "login", value: login),
+            URLQueryItem(name: "device_id", value: deviceId),
+            URLQueryItem(name: "platform", value: platform)
+        ]
+        guard let url = components?.url else { throw AppError.message("URL invalida.") }
+        let json = try await request(url: url, method: "GET", body: nil)
+        let settings = json["settings"] as? [String: Any] ?? [:]
+        return AppSettingsResponse(
+            exists: json["exists"] as? Bool ?? false,
+            settings: AppSettings(json: settings)
+        )
+    }
+
+    func saveAppSettings(login: String, deviceId: String, settings: AppSettings) async throws {
+        _ = try await post(path: "/api/app-settings", body: [
+            "login": login,
+            "device_id": deviceId,
+            "platform": platform,
+            "settings": settings.dictionary
+        ])
+    }
+
+    private func post(path: String, body: [String: Any]) async throws -> [String: Any] {
         guard let url = URL(string: AppConfig.licenseServerBaseURL + path) else {
             throw AppError.message("URL invalida.")
         }
