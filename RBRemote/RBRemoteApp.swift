@@ -1563,7 +1563,7 @@ struct PaymentEmailView: View {
             VStack(spacing: 22) {
                 HeaderMini(status: "PREMIUM")
                 VStack(alignment: .leading, spacing: 14) {
-                    Text("E-mail do Mercado Pago")
+                    Text("Email para Pagamento")
                         .font(.title.weight(.black))
                         .foregroundStyle(.white)
                     Text("Informe o e-mail que ser\u{00E1} usado no pagamento")
